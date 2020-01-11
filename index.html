@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title></title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        * {
+            box-sizing: border-box;
+            font-family: Verdana, serif;
+        }
+
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            max-width: 100%;
+        }
+
+        .wrapper {
+            display: -webkit-box;
+            display: -ms-flexbox;
+            display: flex;
+            height: 100%;
+            -webkit-box-align: center;
+            -ms-flex-align: center;
+            align-items: center;
+            -webkit-box-pack: center;
+            -ms-flex-pack: center;
+            justify-content: center;
+        }
+
+        main {
+            padding: 1.5rem;
+            font-size: 2em;
+        }
+
+        h1 {
+            margin-bottom: .5em;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+<div class="wrapper">
+    <main>
+        <h1 id="time"></h1>
+        <script>
+          const h = n => ('0' + n.toString(16)).slice(-2);
+
+          const setTime = () => {
+            const c = [0, 0, 0];
+            let t = Math.floor(Date.now() / 1000) % (65536 * 6);
+            switch (Math.floor(t / 65536)) {
+              default:
+                t%=65536;
+                /* 00 -> 00 */ c[0] = 0;
+                /* 00 -> FF */ c[1] = Math.floor(t / 256);
+                /* 00 -> 00 */ c[2] = c[1] % 2 ? t % 256 : (255 - t % 256);
+                break;
+              case 1:
+                t%=65536;
+                /* 00 -> 00 */ c[0] = c[2] % 2 ? t % 256 : (255 - t % 256);
+                /* FF -> FF */ c[1] = 255;
+                /* 00 -> FF */ c[2] = Math.floor(t / 256);
+                break;
+              case 2:
+                t%=65536;
+                /* 00 -> FF */ c[0] = Math.floor(t / 256);
+                /* FF -> FF */ c[1] = c[0] % 2 ? (255 - t % 256) : t % 256;
+                /* FF -> FF */ c[2] = 255;
+                break;
+              case 3:
+                t%=65536;
+                /* FF -> FF */ c[0] = 255;
+                /* FF -> 00 */ c[1] = 255 - Math.floor(t / 256);
+                /* FF -> FF */ c[2] = c[1] % 2 ? (255 - t % 256) : t % 256;
+                break;
+              case 4:
+                t%=65536;
+                /* FF -> FF */ c[0] = c[2] % 2 ? (255 - t % 256) : t % 256;
+                /* 00 -> 00 */ c[1] = 0;
+                /* FF -> 00 */ c[2] = 255 - Math.floor(t / 256);
+                break;
+              case 5:
+                t%=65536;
+                /* FF -> 00 */ c[0] = 255 - Math.floor(t / 256);
+                /* 00 -> 00 */ c[1] = c[0] % 2 ? t % 256 : (255 - t % 256);
+                /* 00 -> 00 */ c[2] = 0;
+                break;
+            }
+            const col = h(c[0]) + h(c[1]) + h(c[2]);
+            const inv = h(255 - c[0]) + h(255 - c[1]) + h(255 - c[2]);
+            const time = document.getElementById('time');
+            time.textContent = new Date().toLocaleTimeString('fr-FR');
+            time.setAttribute('title', `#${col}`);
+            document.body.setAttribute('style', `background-color:#${col};color:#${inv}`);
+          };
+          setTime();
+          setInterval(setTime, 10);
+        </script>
+    </main>
+</div>
+</body>
+</html>

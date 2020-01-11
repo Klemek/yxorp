@@ -2,5 +2,7 @@
   "name": "simple-proxy",
   "version": "1.0.0",
   "dependencies": {
+    "http-proxy": "^1.18.0",
+    "request": "^2.88.0"
   }
 }
