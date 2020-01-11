@@ -4,5 +4,10 @@
   "dependencies": {
     "http-proxy": "^1.18.0",
     "request": "^2.88.0"
+  },
+  "devDependencies": {
+    "html-minifier-terser": "^5.0.2",
+    "nodemon": "^2.0.2",
+    "terser": "^4.6.2"
   }
 }

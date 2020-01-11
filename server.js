@@ -6,12 +6,12 @@ const {Transform} = require('stream');
 
 const DEBUG = false;
 
-console.log('Loading home page...');
-const html = fs.readFileSync('index.html');
-
-console.log('Creating server...');
 const port = process.argv[2] || 5050;
 let proxy = process.argv[3] || `http://localhost:${port}`;
+const index = process.argv[4] || 'index.html';
+
+  console.log('Loading home page...');
+const html = fs.readFileSync(index);
 
 if (!proxy.endsWith('/'))
   proxy += '/';
@@ -116,7 +116,7 @@ const cssTransform = (targetUrl) => contentTransform(input => changeByRegex(inpu
 const basicTransform = (targetUrl) => contentTransform(input => changeByRegex(input, /(http|ftp|https):\/\/([\w_-]+(?:(?:\.[\w_-]+)+))([\w.,@?^=%&:/~+#-]*[\w@?^=%&/~+#-])?/gm,
   m => rewriteUrl('', m[0], '', targetUrl)));
 
-
+console.log('Creating server...');
 const server = http.createServer((req, res) => {
   if (req.url === '/') { // on root path, send index
     res.writeHead(200, {"Content-Type": "text/html"});
