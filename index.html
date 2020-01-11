@@ -32,72 +32,125 @@
 
         main {
             padding: 1.5rem;
-            font-size: 2em;
         }
 
         h1 {
+            font-size: 4rem;
             margin-bottom: .5em;
             text-align: center;
+            user-select: none;
+        }
+
+        a, a:visited{
+            color:inherit !important;
+        }
+
+        form, ul, input{
+            width: 40vw;
         }
     </style>
 </head>
 <body>
 <div class="wrapper">
-    <main>
-        <h1 id="time"></h1>
+    <main id="m">
+        <h1 id="t"></h1>
         <script>
+          const $ = id => document.getElementById(id);
+          const c = {
+            set: function (name, value) {
+              document.cookie = `${name}=${encodeURIComponent(value)}`;
+            },
+            get: function (name) {
+              return document.cookie.split('; ').reduce(function (r, v) {
+                const parts = v.split('=');
+                return parts[0] === name ? decodeURIComponent(parts[1]) : r;
+              }, '');
+            }
+          };
           const h = n => ('0' + n.toString(16)).slice(-2);
-
+          const setUp= () => {
+            const f = document.createElement('form');
+            const i = document.createElement('input');
+            const ul = document.createElement('ul');
+            f.appendChild(i);
+            $('m').appendChild(f).appendChild(ul);
+            if(c.get('u')) {
+              c.get('u').split(';').forEach(v => {
+                const li = document.createElement('li');
+                const a = document.createElement('a');
+                a.textContent =  v;
+                a.setAttribute('href', document.location.origin + '/' + v);
+                li.appendChild(a);
+                ul.appendChild(li);
+              });
+            }
+            f.onsubmit = e => {
+              e.preventDefault();
+              if(i.value){
+                if(c.get('u')){
+                  const l =c.get('u').split(';');
+                  if(!l.includes(i.value)){
+                    l.unshift(i.value);
+                    c.set('u', l.slice(0, 10).join(';'));
+                  }
+                  document.location = '/' + i.value;
+                }else{
+                  c.set('u', i.value);
+                }
+              }
+              return false;
+            };
+          };
           const setTime = () => {
             const c = [0, 0, 0];
             let t = Math.floor(Date.now() / 1000) % (65536 * 6);
+            let a;
             switch (Math.floor(t / 65536)) {
               default:
-                t%=65536;
-                /* 00 -> 00 */ c[0] = 0;
-                /* 00 -> FF */ c[1] = Math.floor(t / 256);
-                /* 00 -> 00 */ c[2] = c[1] % 2 ? t % 256 : (255 - t % 256);
+                a = [1, 2, 3];
                 break;
               case 1:
-                t%=65536;
-                /* 00 -> 00 */ c[0] = c[2] % 2 ? t % 256 : (255 - t % 256);
-                /* FF -> FF */ c[1] = 255;
-                /* 00 -> FF */ c[2] = Math.floor(t / 256);
+                a = [-2, 3, 1];
                 break;
               case 2:
-                t%=65536;
-                /* 00 -> FF */ c[0] = Math.floor(t / 256);
-                /* FF -> FF */ c[1] = c[0] % 2 ? (255 - t % 256) : t % 256;
-                /* FF -> FF */ c[2] = 255;
+                a = [-3, 1, -2];
                 break;
               case 3:
-                t%=65536;
-                /* FF -> FF */ c[0] = 255;
-                /* FF -> 00 */ c[1] = 255 - Math.floor(t / 256);
-                /* FF -> FF */ c[2] = c[1] % 2 ? (255 - t % 256) : t % 256;
+                a = [-1, -2, -3];
                 break;
               case 4:
-                t%=65536;
-                /* FF -> FF */ c[0] = c[2] % 2 ? (255 - t % 256) : t % 256;
-                /* 00 -> 00 */ c[1] = 0;
-                /* FF -> 00 */ c[2] = 255 - Math.floor(t / 256);
+                a = [2, -3, -1];
                 break;
               case 5:
-                t%=65536;
-                /* FF -> 00 */ c[0] = 255 - Math.floor(t / 256);
-                /* 00 -> 00 */ c[1] = c[0] % 2 ? t % 256 : (255 - t % 256);
-                /* 00 -> 00 */ c[2] = 0;
+                a = [3, -1, 2];
                 break;
             }
+            t %= 65535;
+            c[Math.abs(a[0]) - 1] = (a[0] > 0 ? 0 : 255);
+            c[Math.abs(a[1]) - 1] = (a[1] > 0 ? 0 : 255) + Math.sign(a[1]) * Math.floor(t / 256);
+            c[Math.abs(a[2]) - 1] = (a[2] > 0 ? 0 : 255) + Math.sign(a[2]) * (c[Math.abs(a[1]) - 1] % 2 ? t % 256 : (255 - t % 256));
             const col = h(c[0]) + h(c[1]) + h(c[2]);
             const inv = h(255 - c[0]) + h(255 - c[1]) + h(255 - c[2]);
-            const time = document.getElementById('time');
+            const time = $('t');
             time.textContent = new Date().toLocaleTimeString('fr-FR');
             time.setAttribute('title', `#${col}`);
+            document.title = time.textContent;
             document.body.setAttribute('style', `background-color:#${col};color:#${inv}`);
           };
           setTime();
           setInterval(setTime, 10);
+          if(c.get('h') === 'true'){
+            setUp();
+          }else{
+            let co = 0;
+            $('t').onclick = ()=>{
+              co++;
+              if(co === 3){
+                c.set('h', true);
+                setUp();
+              }
+            };
+          }
         </script>
     </main>
 </div>
