@@ -13,12 +13,13 @@ console.log('Creating server...');
 const port = process.argv[2] || 5050;
 let proxy = process.argv[3] || `http://localhost:${port}`;
 
-if(!proxy.endsWith('/'))
+if (!proxy.endsWith('/'))
   proxy += '/';
 
 const rewriteUrl = (prefix, u, suffix, targetUrl) => {
-  let protocol = url.parse(targetUrl).protocol;
-  let targetOrigin = url.parse(targetUrl).origin;
+  let parsedUrl = url.parse(targetUrl);
+  let protocol = parsedUrl.protocol;
+  let targetOrigin = `${parsedUrl.protocol}//${parsedUrl.host}`;
   if (/^\w+:\/\//gi.test(u)) {
     return prefix + proxy + u + suffix;
   } else if (u.startsWith('//')) {
@@ -34,8 +35,10 @@ const changeByRegex = (input, regex, transform) => {
   const matches = input.matchAll(regex);
   let output = '';
   let i = 0;
+  let frag;
   for (const match of matches) {
-    output += input.substr(i, match.index - i) + transform(match);
+    frag = transform(match);
+    output += input.substr(i, match.index - i) + frag;
     i = match.index + match[0].length;
   }
   output += input.substr(i);
@@ -109,37 +112,43 @@ const server = http.createServer((req, res) => {
       req.url = req.url.substr(1);
     if (!/^\w+:\/\//gi.test(req.url))
       req.url = 'https://' + req.url;
-    if(DEBUG)
+    if (DEBUG)
       console.log(`>${req.url}`);
-    request({
-      url: req.url
-    }).on('error', e => {
+    try {
+      request({
+        url: req.url
+      }).on('error', e => {
+        console.error(`!${req.url}`);
+        res.writeHead(500, 'internal error', {"Content-Type": "text/plain"});
+        res.end();
+      }).on('response', r => {
+        if (!r.headers['content-type'])
+          return r.pipe(res);
+        switch (r.headers['content-type'].split(';')[0]) {
+          case 'text/html':
+            r.pipe(htmlTransform(req.url)).pipe(res);
+            break;
+          case 'text/css':
+            r.pipe(cssTransform(req.url)).pipe(res);
+            break;
+          case 'text/javascript':
+          case 'application/javascript':
+          case 'application/json':
+          case 'text/xml':
+          case 'application/xml':
+          case 'application/xhtml+xml':
+            r.pipe(basicTransform(req.url)).pipe(res);
+            break;
+          default:
+            r.pipe(res);
+            break;
+        }
+      });
+    } catch {
       console.error(`!${req.url}`);
       res.writeHead(500, 'internal error', {"Content-Type": "text/plain"});
       res.end();
-    }).on('response', r => {
-      if (!r.headers['content-type'])
-        return r.pipe(res);
-      switch (r.headers['content-type'].split(';')[0]) {
-        case 'text/html':
-          r.pipe(htmlTransform(req.url)).pipe(res);
-          break;
-        case 'text/css':
-          r.pipe(cssTransform(req.url)).pipe(res);
-          break;
-        case 'text/javascript':
-        case 'application/javascript':
-        case 'application/json':
-        case 'text/xml':
-        case 'application/xml':
-        case 'application/xhtml+xml':
-          r.pipe(basicTransform(req.url)).pipe(res);
-          break;
-        default:
-          r.pipe(res);
-          break;
-      }
-    });
+    }
   }
 });
 
