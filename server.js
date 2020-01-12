@@ -4,13 +4,14 @@ const request = require('request');
 const url = require('url');
 const {Transform} = require('stream');
 
-const DEBUG = false;
+const DEBUG_LEVEL = 1;
 
 const port = process.argv[2] || 5050;
 let proxy = process.argv[3] || `http://localhost:${port}`;
 const index = process.argv[4] || 'index.html';
+const sourceHistory = {};
 
-  console.log('Loading home page...');
+console.log('Loading home page...');
 const html = fs.readFileSync(index);
 
 if (!proxy.endsWith('/'))
@@ -52,11 +53,11 @@ const changeByRegex = (input, regex, transform) => {
   let i = 0;
   let frag;
   for (const match of matches) {
-    if(DEBUG)
-      console.log('-'+match[0]);
+    if (DEBUG_LEVEL >= 2)
+      console.log('-' + match[0]);
     frag = transform(match);
-    if(DEBUG)
-      console.log('+',frag);
+    if (DEBUG_LEVEL >= 2)
+      console.log('+', frag);
     output += input.substr(i, match.index - i) + frag;
     i = match.index + match[0].length;
   }
@@ -93,10 +94,13 @@ const contentTransform = (finalTransform) => {
  */
 const htmlTransform = (targetUrl) => contentTransform(input => {
   // change HTML attributes as href= or src=
-  let output = changeByRegex(input, /(href|src|url)=["']([^"']+)["']/gm,
+  let output1 = changeByRegex(input, /(href|src|url)=["']([^"']+)["']/gm,
     m => rewriteUrl(`${m[1]}="`, m[2], '"', targetUrl));
+  // removes script integrity attributes
+  let output2 = changeByRegex(output1, /(integrity)=["']([^"']+)["']/gm,
+    () => '');
   // change CSS attributes that uses url(...)
-  return changeByRegex(output, /url\(([^)]*)\)/gm,
+  return changeByRegex(output2, /url\(([^)]*)\)/gm,
     m => rewriteUrl('url(', m[1], ')', targetUrl));
 });
 
@@ -113,34 +117,43 @@ const cssTransform = (targetUrl) => contentTransform(input => changeByRegex(inpu
  * @param {string} targetUrl - current page URL
  * @returns {module:stream.internal.Transform}
  */
-const basicTransform = (targetUrl) => contentTransform(input => changeByRegex(input, /(http|ftp|https):\/\/([\w_-]+(?:(?:\.[\w_-]+)+))([\w.,@?^=%&:/~+#-]*[\w@?^=%&/~+#-])?/gm,
-  m => rewriteUrl('', m[0], '', targetUrl)));
+/*const basicTransform = (targetUrl) => contentTransform(input => changeByRegex(input, /(http|ftp|https):\/\/([\w_-]+(?:(?:\.[\w_-]+)+))([\w.,@?^=%&:/~+#-]*[\w@?^=%&/~+#-])?/gm,
+  m => rewriteUrl('', m[0], '', targetUrl)));*/
 
-console.log('Creating server...');
-const server = http.createServer((req, res) => {
-  if (req.url === '/') { // on root path, send index
-    res.writeHead(200, {"Content-Type": "text/html"});
-    res.write(html);
-    res.end();
-  } else if (req.url === '/favicon.ico') { // ignore favicon
-    res.writeHead(404, 'not found', {"Content-Type": "text/plain"});
-    res.end();
-  } else { // redirect to URL
-    if (req.url.substr(0, 1) === '/') // remove the first / added by default
-      req.url = req.url.substr(1);
-    if (!/^\w+:\/\//gi.test(req.url)) // add protocol if not present
-      req.url = 'https://' + req.url;
-    if (DEBUG)
-      console.log(`>${req.url}`);
-    try {
-      // send request to get URL data
-      request({
-        url: req.url
-      }).on('error', () => {
-        console.error(`!${req.url}`);
-        res.writeHead(500, 'internal error', {"Content-Type": "text/plain"});
-        res.end();
-      }).on('response', r => {
+/**
+ * Core of the proxy, will send the request and compute the result
+ * @param req
+ * @param res
+ */
+const proxyRequest = (req, res) => {
+  const source = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+  const reqUrl = url.parse(req.url); // keep requested URL
+  req.url = 'https://' + req.url;
+  const targetHost = url.parse(req.url).host; // extract target host
+  try {
+    if (DEBUG_LEVEL >= 1)
+      console.log(`${source}>${req.method} ${req.url}`);
+    // change request headers to avoid issues
+    req.headers['host'] = targetHost;
+    delete req.headers['accept-encoding'];
+    // pipe original request to a new one
+    req.pipe(request(req.url)
+      .on('error', () => {
+        // targetHost is last request, normal error
+        if (req.redirect > 2 || sourceHistory[source] === targetHost) {
+          console.error(`${source}!>${req.method} ${req.url}`);
+          res.writeHead(500, 'internal error', {"Content-Type": "text/plain"});
+          res.end();
+        } else { // else try to redirect to known host
+          req.url = sourceHistory[source] + '/' + reqUrl.pathname;
+          proxyRequest(req, res);
+        }
+      })
+      .on('response', r => {
+        let contentType = (r.headers['content-type'] || 'unknown').split(';')[0];
+        if (DEBUG_LEVEL >= 1)
+          console.log(`${source}<${r.statusCode} (${contentType}) ${req.url}`);
+        sourceHistory[source] = targetHost;
         if (!r.headers['content-type']) // unknown content, just send it as-is
           return r.pipe(res);
         // remove troublesome headers
@@ -150,7 +163,7 @@ const server = http.createServer((req, res) => {
         // write correct response head
         res.writeHead(res.statusCode, r.headers);
         // change data by content-type
-        switch (r.headers['content-type'].split(';')[0]) {
+        switch (contentType) {
           case 'text/html':
             r.pipe(htmlTransform(req.url)).pipe(res);
             break;
@@ -163,20 +176,37 @@ const server = http.createServer((req, res) => {
           case 'text/xml':
           case 'application/xml':
           case 'application/xhtml+xml':
-            // TODO breaking some JS, need to refine
-            //r.pipe(basicTransform(req.url)).pipe(res);
-            //break;
+          // TODO breaking some JS, need to refine
+          //r.pipe(basicTransform(req.url)).pipe(res);
+          //break;
           default:
             // simply send data without change
             r.pipe(res);
             break;
         }
-      });
-    } catch {
-      // invalid URI issue
-      console.error(`!${req.url}`);
-      res.writeHead(500, 'internal error', {"Content-Type": "text/plain"});
+      }));
+  } catch (e) {
+    // invalid URI issue
+    console.error(`${source}!!>${req.method} ${req.url}`);
+    res.writeHead(500, 'internal error', {"Content-Type": "text/plain"});
+    res.end();
+  }
+};
+
+console.log('Creating server...');
+const server = http.createServer((req, res) => {
+  if (req.url === '/') { // on root path, send index
+    res.writeHead(200, {"Content-Type": "text/html"});
+    res.write(html);
+    res.end();
+  } else { // redirect to URL
+    req.url = req.url.substr(1);
+    const reqUrl = url.parse(req.url);
+    if (reqUrl.protocol != null) {
+      res.writeHead(308, {"Location": reqUrl.slashes ? '/' + reqUrl.host + reqUrl.path : reqUrl.path});
       res.end();
+    } else {
+      proxyRequest(req, res);
     }
   }
 });
