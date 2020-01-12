@@ -6,7 +6,7 @@ Proxy your requests and rewrite pages/styles to follow the same rule
 ### To use :
 
 ```
-node server.js [port] [proxy-origin]
+node server.js [port] [proxy-origin] [index page]
 ```
 
 proxy-origin should be as "http(s)://your.host"
@@ -29,4 +29,5 @@ nodemon ./server.js 3000
 
 1. (on localhost) websites that doesn't like "being" on another port
 2. websites that doesn't like not being the host
-3. dynamic URLs created in scripts
+3. dynamic HTTP queries created in scripts
+4. non-GET method
