@@ -130,6 +130,19 @@ const proxyRequest = (req, res) => {
   const reqUrl = url.parse(req.url); // keep requested URL
   req.url = 'https://' + req.url;
   const targetHost = url.parse(req.url).host; // extract target host
+
+  const onError = () => {
+    // targetHost is last request, normal error
+    if (req.redirect > 2 || sourceHistory[source] === targetHost) {
+      console.error(`${source}!>${req.method} ${req.url}`);
+      res.writeHead(500, 'internal error', {"Content-Type": "text/plain"});
+      res.end();
+    } else { // else try to redirect to known host
+      req.url = sourceHistory[source] + '/' + reqUrl.path;
+      proxyRequest(req, res);
+    }
+  };
+
   try {
     if (DEBUG_LEVEL >= 1)
       console.log(`${source}>${req.method} ${req.url}`);
@@ -138,17 +151,7 @@ const proxyRequest = (req, res) => {
     delete req.headers['accept-encoding'];
     // pipe original request to a new one
     req.pipe(request(req.url)
-      .on('error', () => {
-        // targetHost is last request, normal error
-        if (req.redirect > 2 || sourceHistory[source] === targetHost) {
-          console.error(`${source}!>${req.method} ${req.url}`);
-          res.writeHead(500, 'internal error', {"Content-Type": "text/plain"});
-          res.end();
-        } else { // else try to redirect to known host
-          req.url = sourceHistory[source] + '/' + reqUrl.pathname;
-          proxyRequest(req, res);
-        }
-      })
+      .on('error', onError)
       .on('response', r => {
         let contentType = (r.headers['content-type'] || 'unknown').split(';')[0];
         if (DEBUG_LEVEL >= 1)
@@ -185,11 +188,8 @@ const proxyRequest = (req, res) => {
             break;
         }
       }));
-  } catch (e) {
-    // invalid URI issue
-    console.error(`${source}!!>${req.method} ${req.url}`);
-    res.writeHead(500, 'internal error', {"Content-Type": "text/plain"});
-    res.end();
+  } catch {
+    onError();
   }
 };
 
@@ -200,10 +200,13 @@ const server = http.createServer((req, res) => {
     res.write(html);
     res.end();
   } else { // redirect to URL
-    req.url = req.url.substr(1);
+    req.url = req.url.substr(1); // remove initial / in path
     const reqUrl = url.parse(req.url);
     if (reqUrl.protocol != null) {
       res.writeHead(308, {"Location": reqUrl.slashes ? '/' + reqUrl.host + reqUrl.path : reqUrl.path});
+      res.end();
+    } else if (/^(\w+\.)+\w+$/g.test(req.url)) {
+      res.writeHead(308, {"Location": '/' + req.url + '/'});
       res.end();
     } else {
       proxyRequest(req, res);
