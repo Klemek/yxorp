@@ -4,10 +4,29 @@ const request = require('request');
 const url = require('url');
 const {Transform} = require('stream');
 
-const DEBUG_LEVEL = 1;
+const DEBUG = {
+  NONE: 0x0,
+  ERROR: 0x1,
+  REQUEST: 0x10,
+  RESPONSE: 0x100,
+  HTML_MATCH: 0x1000,
+  CSS_MATCH: 0x10000,
+  SCRIPT_MATCH: 0x100000,
+  BASIC_MATCH: 0x1000000,
+  REDIRECT: 0x10000000,
+};
+
+const DEBUG_LEVEL = DEBUG.REQUEST | DEBUG.SCRIPT_MATCH;
+
+console.log('DEBUG LEVELS :');
+Object.keys(DEBUG).forEach(key => {
+  if (DEBUG_LEVEL & DEBUG[key])
+    console.log(' - ' + key);
+});
 
 const port = process.argv[2] || 5050;
 let proxy = process.argv[3] || `http://localhost:${port}`;
+const proxyHost = url.parse(proxy).host;
 const index = process.argv[4] || 'index.html';
 const sourceHistory = {};
 
@@ -16,6 +35,7 @@ const html = fs.readFileSync(index);
 
 if (!proxy.endsWith('/'))
   proxy += '/';
+
 
 /**
  * Rewrite URL to add proxy before it
@@ -26,13 +46,15 @@ if (!proxy.endsWith('/'))
  * @returns {string}
  */
 const rewriteUrl = (prefix, u, suffix, targetUrl) => {
+  if (u.startsWith(proxy)) //already treated
+    return prefix + u + suffix;
   let parsedUrl = url.parse(targetUrl);
-  let protocol = parsedUrl.protocol;
+  let parsedMatch = url.parse(u);
   let targetOrigin = `${parsedUrl.protocol}//${parsedUrl.host}`;
-  if (/^\w+:\/\//gi.test(u)) { // full URL with protocol (https://google.com/favicon.ico)
-    return prefix + proxy + u + suffix; // simply add proxy
+  if (parsedMatch.protocol) { // full URL with protocol (https://google.com/favicon.ico)
+    return prefix + proxy + parsedMatch.host + parsedMatch.path + suffix; // simply add proxy
   } else if (u.startsWith('//')) { // full URL without protocol (//google.com/favicon.ico)
-    return prefix + proxy + protocol + u + suffix; // add proxy and protocol
+    return prefix + proxy + u.substr(2) + suffix; // add proxy
   } else if (u.startsWith('/')) { // URL with root path (/favicon.ico)
     return prefix + proxy + targetOrigin + u + suffix; // add proxy and origin (https://google.com)
   } else { // relative path (favicon.ico)
@@ -45,18 +67,19 @@ const rewriteUrl = (prefix, u, suffix, targetUrl) => {
  * @param {string} input
  * @param {RegExp} regex
  * @param {function(RegExpMatchArray):string} transform
+ * @param {number} debugId
  * @returns {string}
  */
-const changeByRegex = (input, regex, transform) => {
+const changeByRegex = (input, regex, transform, debugId) => {
   const matches = input.matchAll(regex);
   let output = '';
   let i = 0;
   let frag;
   for (const match of matches) {
-    if (DEBUG_LEVEL >= 2)
+    if (DEBUG_LEVEL & debugId)
       console.log('-' + match[0]);
     frag = transform(match);
-    if (DEBUG_LEVEL >= 2)
+    if (DEBUG_LEVEL & debugId)
       console.log('+', frag);
     output += input.substr(i, match.index - i) + frag;
     i = match.index + match[0].length;
@@ -95,13 +118,10 @@ const contentTransform = (finalTransform) => {
 const htmlTransform = (targetUrl) => contentTransform(input => {
   // change HTML attributes as href= or src=
   let output1 = changeByRegex(input, /(href|src|url)=["']([^"']+)["']/gm,
-    m => rewriteUrl(`${m[1]}="`, m[2], '"', targetUrl));
+    m => rewriteUrl(`${m[1]}="`, m[2], '"', targetUrl), DEBUG.HTML_MATCH);
   // removes script integrity attributes
-  let output2 = changeByRegex(output1, /(integrity)=["']([^"']+)["']/gm,
-    () => '');
-  // change CSS attributes that uses url(...)
-  return changeByRegex(output2, /url\(([^)]*)\)/gm,
-    m => rewriteUrl('url(', m[1], ')', targetUrl));
+  return changeByRegex(output1, /(integrity)=["']([^"']+)["']/gm,
+    () => '', DEBUG.NONE);
 });
 
 /**
@@ -110,15 +130,29 @@ const htmlTransform = (targetUrl) => contentTransform(input => {
  * @returns {module:stream.internal.Transform}
  */
 const cssTransform = (targetUrl) => contentTransform(input => changeByRegex(input, /url\(([^)]*)\)/gm,
-  m => rewriteUrl('url(', m[1], ')', targetUrl)));
+  m => rewriteUrl('url(', m[1], ')', targetUrl), DEBUG.CSS_MATCH));
+
+/**
+ * Stream Transform to rewrite possible JS URLs
+ * @param {string} targetHost - current page Host
+ * @returns {module:stream.internal.Transform}
+ */
+const scriptTransform = (targetHost) => contentTransform(input => {
+  // found domains like (//something.com/)
+  let output1 = changeByRegex(input, /\/\/((\w+\.)+\w+)\//gm,
+    m => '//' + proxyHost + m[0].substr(1), DEBUG.SCRIPT_MATCH);
+  // found escaped domains like (\/\/something.com\/)
+  return changeByRegex(output1, /\\\/\\\/((\w+\.)+\w+)\\\//gm,
+    m => '\\/\\/' + proxyHost + m[0].substr(2), DEBUG.SCRIPT_MATCH);
+});
 
 /**
  * Stream Transform to rewrite any URLs found
  * @param {string} targetUrl - current page URL
  * @returns {module:stream.internal.Transform}
  */
-/*const basicTransform = (targetUrl) => contentTransform(input => changeByRegex(input, /(http|ftp|https):\/\/([\w_-]+(?:(?:\.[\w_-]+)+))([\w.,@?^=%&:/~+#-]*[\w@?^=%&/~+#-])?/gm,
-  m => rewriteUrl('', m[0], '', targetUrl)));*/
+const basicTransform = (targetUrl) => contentTransform(input => changeByRegex(input, /(http|ftp|https):\/\/([\w_-]+(?:(?:\.[\w_-]+)+))([\w.,@?^=%&:/~+#-]*[\w@?^=%&/~+#-])?/gm,
+  m => rewriteUrl('', m[0], '', targetUrl), DEBUG.BASIC_MATCH));
 
 /**
  * Core of the proxy, will send the request and compute the result
@@ -127,24 +161,29 @@ const cssTransform = (targetUrl) => contentTransform(input => changeByRegex(inpu
  */
 const proxyRequest = (req, res) => {
   const source = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+  while(req.url.includes(proxyHost+'/'))
+    req.url = req.url.split(proxyHost+'/')[1];
   const reqUrl = url.parse(req.url); // keep requested URL
   req.url = 'https://' + req.url;
   const targetHost = url.parse(req.url).host; // extract target host
 
   const onError = () => {
     // targetHost is last request, normal error
-    if (req.redirect > 2 || sourceHistory[source] === targetHost) {
-      console.error(`${source}!>${req.method} ${req.url}`);
+    if (!sourceHistory[source] || sourceHistory[source] === targetHost) {
+      if (DEBUG_LEVEL & DEBUG.ERROR)
+        console.error(`${source}!>${req.method} ${req.url}`);
       res.writeHead(500, 'internal error', {"Content-Type": "text/plain"});
       res.end();
     } else { // else try to redirect to known host
+      if (DEBUG_LEVEL & DEBUG.REDIRECT)
+        console.log(req.url + ' => ' + sourceHistory[source] + '/' + reqUrl.path);
       req.url = sourceHistory[source] + '/' + reqUrl.path;
       proxyRequest(req, res);
     }
   };
 
   try {
-    if (DEBUG_LEVEL >= 1)
+    if (DEBUG_LEVEL & DEBUG.REQUEST)
       console.log(`${source}>${req.method} ${req.url}`);
     // change request headers to avoid issues
     req.headers['host'] = targetHost;
@@ -154,7 +193,7 @@ const proxyRequest = (req, res) => {
       .on('error', onError)
       .on('response', r => {
         let contentType = (r.headers['content-type'] || 'unknown').split(';')[0];
-        if (DEBUG_LEVEL >= 1)
+        if (DEBUG_LEVEL & DEBUG.RESPONSE)
           console.log(`${source}<${r.statusCode} (${contentType}) ${req.url}`);
         sourceHistory[source] = targetHost;
         if (!r.headers['content-type']) // unknown content, just send it as-is
@@ -168,20 +207,31 @@ const proxyRequest = (req, res) => {
         // change data by content-type
         switch (contentType) {
           case 'text/html':
-            r.pipe(htmlTransform(req.url)).pipe(res);
+            r.pipe(scriptTransform(targetHost))
+              .pipe(htmlTransform(req.url))
+              .pipe(cssTransform(req.url))
+              .pipe(basicTransform(req.url))
+              .pipe(res);
             break;
           case 'text/css':
-            r.pipe(cssTransform(req.url)).pipe(res);
+            r.pipe(cssTransform(req.url))
+              .pipe(basicTransform(req.url))
+              .pipe(res);
             break;
           case 'text/javascript':
           case 'application/javascript':
+            // TODO breaking some JS, need to refine
+            r.pipe(scriptTransform(targetHost))
+              .pipe(basicTransform(req.url))
+              .pipe(res);
+            break;
           case 'application/json':
           case 'text/xml':
           case 'application/xml':
           case 'application/xhtml+xml':
-          // TODO breaking some JS, need to refine
-          //r.pipe(basicTransform(req.url)).pipe(res);
-          //break;
+            r.pipe(basicTransform(req.url))
+              .pipe(res);
+            break;
           default:
             // simply send data without change
             r.pipe(res);
@@ -198,6 +248,14 @@ const server = http.createServer((req, res) => {
   if (req.url === '/') { // on root path, send index
     res.writeHead(200, {"Content-Type": "text/html"});
     res.write(html);
+    res.end();
+  } else if (req.method === 'OPTIONS') {
+    res.writeHead(200, {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': '*',
+      'Access-Control-Allow-Headers': '*',
+      'Access-Control-Max-Age': '86400' // TODO change ?
+    });
     res.end();
   } else { // redirect to URL
     req.url = req.url.substr(1); // remove initial / in path
