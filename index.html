@@ -149,18 +149,13 @@
           };
           setTime();
           setInterval(setTime, 10);
-          if(c.get('h') === 'true'){
-            setUp();
-          }else{
-            let co = 0;
-            $('t').onclick = ()=>{
-              co++;
-              if(co === 3){
-                c.set('h', true);
-                setUp();
-              }
-            };
-          }
+          let co = 0;
+          $('t').onclick = ()=>{
+            co++;
+            if(co === 3){
+              setUp();
+            }
+          };
         </script>
     </main>
 </div>
