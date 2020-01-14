@@ -5,19 +5,31 @@ const url = require('url');
 const {Transform} = require('stream');
 
 const DEBUG = {
-  NONE: 0x0,
-  ERROR: 0x1,
-  REQUEST: 0x10,
-  RESPONSE: 0x100,
-  HTML_MATCH: 0x1000,
-  CSS_MATCH: 0x10000,
-  SCRIPT_MATCH: 0x100000,
-  BASIC_MATCH: 0x1000000,
-  REDIRECT: 0x10000000,
-  INIT_REQ: 0x100000000,
+  NONE: 0,
+  ERROR: 1,
+  REQUEST: 2,
+  RESPONSE: 4,
+  HTML_MATCH: 8,
+  CSS_MATCH: 16,
+  SCRIPT_MATCH: 32,
+  BASIC_MATCH: 64,
+  REDIRECT: 128,
+  INIT_REQ: 256,
 };
 
 const DEBUG_LEVEL = DEBUG.INIT_REQ;
+
+const REMOVE_REQ_HEADERS = [
+  'accept-encoding',
+  'sec-fetch-mode',
+  'sec-fetch-site',
+  'sec-fetch-user'];
+const REMOVE_RESP_HEADERS = [
+  'access-control-allow-origin',
+  'content-security-policy',
+  'content-length'
+];
+const HISTORY_TIMEOUT = 6e5; // 10 minutes
 
 console.log('DEBUG LEVELS :');
 Object.keys(DEBUG).forEach(key => {
@@ -162,37 +174,45 @@ const basicTransform = (targetUrl) => contentTransform(input => changeByRegex(in
  */
 const proxyRequest = (req, res) => {
   const source = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-  while(req.url.includes(proxyHost+'/'))
-    req.url = req.url.split(proxyHost+'/')[1];
+  const time = new Date().getTime();
+  // clear history if too old
+  if(sourceHistory[source] && time - sourceHistory[source].time > HISTORY_TIMEOUT)
+    delete sourceHistory[source];
+
+  while (req.url.includes(proxyHost + '/'))
+    req.url = req.url.split(proxyHost + '/')[1];
   const reqUrl = url.parse(req.url); // keep requested URL
   req.url = 'https://' + req.url;
   const targetHost = url.parse(req.url).host; // extract target host
 
   const onError = () => {
     // targetHost is last request, normal error
-    if (!sourceHistory[source] || sourceHistory[source] === targetHost) {
+    if (!sourceHistory[source] || sourceHistory[source].host === targetHost) {
       if (DEBUG_LEVEL & DEBUG.ERROR)
         console.error(`${source}!>${req.method} ${req.url}`);
       res.writeHead(500, 'internal error', {"Content-Type": "text/plain"});
       res.end();
     } else { // else try to redirect to known host
       if (DEBUG_LEVEL & DEBUG.REDIRECT)
-        console.log(req.url + ' => ' + sourceHistory[source] + '/' + reqUrl.path);
-      req.url = sourceHistory[source] + '/' + reqUrl.path;
+        console.log(req.url + ' => ' + sourceHistory[source].host + '/' + reqUrl.path);
+      req.url = sourceHistory[source].host + '/' + reqUrl.path;
       proxyRequest(req, res);
     }
   };
 
   try {
-    if(req.headers['upgrade-insecure-requests']){
-      sourceHistory[source] = targetHost;
+    if (req.headers['upgrade-insecure-requests'] || !sourceHistory[source]) {
+      sourceHistory[source] = {
+        host: targetHost,
+        time: time
+      };
       if (DEBUG_LEVEL & (DEBUG.REQUEST | DEBUG.INIT_REQ))
         console.log(`${source}>>${req.method} ${req.url}`);
-    }else if (DEBUG_LEVEL & DEBUG.REQUEST)
+    } else if (DEBUG_LEVEL & DEBUG.REQUEST)
       console.log(`${source}>${req.method} ${req.url}`);
     // change request headers to avoid issues
     req.headers['host'] = targetHost;
-    delete req.headers['accept-encoding'];
+    REMOVE_REQ_HEADERS.forEach(key => delete req.headers[key]);
     // pipe original request to a new one
     req.pipe(request(req.url)
       .on('error', onError)
@@ -203,9 +223,7 @@ const proxyRequest = (req, res) => {
         if (!r.headers['content-type']) // unknown content, just send it as-is
           return r.pipe(res);
         // remove troublesome headers
-        delete r.headers['access-control-allow-origin'];
-        delete r.headers['content-security-policy'];
-        delete r.headers['content-length'];
+        REMOVE_RESP_HEADERS.forEach(key => delete r.headers[key]);
         // write correct response head
         res.writeHead(res.statusCode, r.headers);
         // change data by content-type
