@@ -14,9 +14,10 @@ const DEBUG = {
   SCRIPT_MATCH: 0x100000,
   BASIC_MATCH: 0x1000000,
   REDIRECT: 0x10000000,
+  INIT_REQ: 0x100000000,
 };
 
-const DEBUG_LEVEL = DEBUG.REQUEST | DEBUG.SCRIPT_MATCH;
+const DEBUG_LEVEL = DEBUG.INIT_REQ;
 
 console.log('DEBUG LEVELS :');
 Object.keys(DEBUG).forEach(key => {
@@ -183,7 +184,11 @@ const proxyRequest = (req, res) => {
   };
 
   try {
-    if (DEBUG_LEVEL & DEBUG.REQUEST)
+    if(req.headers['upgrade-insecure-requests']){
+      sourceHistory[source] = targetHost;
+      if (DEBUG_LEVEL & (DEBUG.REQUEST | DEBUG.INIT_REQ))
+        console.log(`${source}>>${req.method} ${req.url}`);
+    }else if (DEBUG_LEVEL & DEBUG.REQUEST)
       console.log(`${source}>${req.method} ${req.url}`);
     // change request headers to avoid issues
     req.headers['host'] = targetHost;
@@ -195,7 +200,6 @@ const proxyRequest = (req, res) => {
         let contentType = (r.headers['content-type'] || 'unknown').split(';')[0];
         if (DEBUG_LEVEL & DEBUG.RESPONSE)
           console.log(`${source}<${r.statusCode} (${contentType}) ${req.url}`);
-        sourceHistory[source] = targetHost;
         if (!r.headers['content-type']) // unknown content, just send it as-is
           return r.pipe(res);
         // remove troublesome headers
