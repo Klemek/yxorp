@@ -47,7 +47,7 @@ if (!proxy.endsWith('/'))
  * @returns {string}
  */
 const rewriteUrl = (prefix, u, suffix, targetUrl) => {
-  if (u.startsWith(proxy)) //already treated
+  if (u.includes(proxy)) //already treated
     return prefix + u + suffix;
   let parsedUrl = url.parse(targetUrl);
   let parsedMatch = url.parse(u);
