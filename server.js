@@ -17,7 +17,7 @@ const DEBUG = {
   INIT_REQ: 256,
 };
 
-const DEBUG_LEVEL = DEBUG.INIT_REQ;
+const DEBUG_LEVEL = DEBUG.REQUEST;
 
 const REMOVE_REQ_HEADERS = [
   'accept-encoding',
@@ -176,12 +176,20 @@ const proxyRequest = (req, res) => {
   const source = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
   const time = new Date().getTime();
   // clear history if too old
-  if(sourceHistory[source] && time - sourceHistory[source].time > HISTORY_TIMEOUT)
+  if (sourceHistory[source] && time - sourceHistory[source].time > HISTORY_TIMEOUT)
     delete sourceHistory[source];
 
-
-
   const reqUrl = url.parse(req.url); // keep requested URL
+
+  const reqHost = req.headers['host'];
+  if (sourceHistory[source] && reqHost && reqHost.endsWith(proxyHost) && reqHost.length > proxyHost.length) {
+    // something is before the host
+    const subHost = reqHost.substr(0, reqHost.length - proxyHost.length);
+    if (DEBUG_LEVEL & DEBUG.REDIRECT)
+      console.log(req.url + ' => ' + subHost + sourceHistory[source].host + '/' + reqUrl.path);
+    req.url = subHost + sourceHistory[source].host + '/' + reqUrl.path;
+  }
+
   req.url = 'https://' + req.url;
   const targetHost = url.parse(req.url).host; // extract target host
 
