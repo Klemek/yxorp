@@ -190,7 +190,7 @@ const proxyRequest = (req, res) => {
     if (!sourceHistory[source] || sourceHistory[source].host === targetHost) {
       if (DEBUG_LEVEL & DEBUG.ERROR)
         console.error(`${source}!>${req.method} ${req.url}`);
-      res.writeHead(500, 'internal error', {"Content-Type": "text/plain"});
+      res.writeHead(502, `cannot access ${req.url}`, {"Content-Type": "text/plain"});
       res.end();
     } else { // else try to redirect to known host
       if (DEBUG_LEVEL & DEBUG.REDIRECT)
@@ -276,17 +276,17 @@ const server = http.createServer((req, res) => {
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': '*',
       'Access-Control-Allow-Headers': '*',
-      'Access-Control-Max-Age': '86400' // TODO change ?
+      'Access-Control-Max-Age': '86400' // 1 day
     });
     res.end();
   } else { // redirect to URL
     req.url = req.url.substr(1); // remove initial / in path
     const reqUrl = url.parse(req.url);
     if (reqUrl.protocol != null) {
-      res.writeHead(308, {"Location": reqUrl.slashes ? '/' + reqUrl.host + reqUrl.path : reqUrl.path});
+      res.writeHead(301, {"Location": reqUrl.slashes ? '/' + reqUrl.host + reqUrl.path : reqUrl.path});
       res.end();
     } else if (/^(\w+\.)+\w+$/g.test(req.url)) {
-      res.writeHead(308, {"Location": '/' + req.url + '/'});
+      res.writeHead(301, {"Location": '/' + req.url + '/'});
       res.end();
     } else {
       proxyRequest(req, res);
