@@ -179,8 +179,8 @@ const proxyRequest = (req, res) => {
   if(sourceHistory[source] && time - sourceHistory[source].time > HISTORY_TIMEOUT)
     delete sourceHistory[source];
 
-  while (req.url.includes(proxyHost + '/'))
-    req.url = req.url.split(proxyHost + '/')[1];
+
+
   const reqUrl = url.parse(req.url); // keep requested URL
   req.url = 'https://' + req.url;
   const targetHost = url.parse(req.url).host; // extract target host
