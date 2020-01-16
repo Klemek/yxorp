@@ -31,3 +31,37 @@ nodemon ./server.js 3000
 2. websites that doesn't like not being the host
 3. dynamic HTTP queries created in scripts
 4. non-GET method
+
+### How it works
+
+#### Proxying request
+
+When you reach `https://<proxy_host>/google.com/index.html` it will send a request to `https://google.com/index.html` from it's own and retreive you the response.
+
+#### Identifying URLs in response
+
+The response is also modified so that you can receive all resources the same way.
+
+* All files
+  * full URLs `https://google.com/image.png`
+* CSS and HTML files
+  * CSS URLs `url(https://google.com/image.png)`
+* JS and HTML files
+  * identified domains `//google.com/`
+  * identified escaped domains `\/\/google.com\/`
+* HTML files
+  * common html attributes
+    * `src="https://google.com/script.js"`
+    * `href='/style.css'`
+
+#### Rewriting URLs in response
+
+All following URLs are rewritten as `https://<proxy_host>/google.com/favicon.ico`:
+
+Type | Input Example
+--- | ---
+full URL with protocol | `https://google.com/favicon.ico`
+full URL without protocol | `//google.com/favicon.ico`
+root path URL* | `/favicon.ico`
+
+\* can be rewritten with cache-saved target host (identified by the first request containing the `upgrade-insecure-requests` header)
