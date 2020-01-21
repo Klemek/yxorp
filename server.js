@@ -240,7 +240,6 @@ const cssTransform = (targetUrl) => contentTransform(input => changeByRegex(inpu
 
 /**
  * Stream Transform to rewrite possible JS URLs
- * @param {string} targetHost - current page Host
  * @returns {module:stream.internal.Transform}
  */
 const scriptTransform = () => contentTransform(input => {
@@ -251,7 +250,7 @@ const scriptTransform = () => contentTransform(input => {
   let output2 = changeByRegex(output1, /\\\/\\\/((\w+\.)+\w+)\\\//gm,
     m => '\\/\\/' + proxy.host + m[0].substr(2), DEBUG.SCRIPT_MATCH);
   return changeByRegex(output2, /\/\/# sourceMappingURL=[^\n]+/gm,
-    m => '', DEBUG.NONE);
+    () => '', DEBUG.NONE);
 });
 
 /**
@@ -265,7 +264,7 @@ const basicTransform = (targetUrl) =>
     let output1 = changeByRegex(input, /[a-z]{2,}:\/\/([\w_-]+((\.[\w_-]+)+))([\w.,@?^=%&:\/~+#-]*[\w@?^=%&\/~+#-])?/gm,
       m => rewriteUrl('', m[0], '', targetUrl), DEBUG.BASIC_MATCH);
     // full escaped URLs
-    return changeByRegex(input, /[a-z]{2,}:\\\/\\\/([\w_-]+((\.[\w_-]+)+))(([\w.,@?^=%&:~+#-]|\\\/)*([\w@?^=%&~+#-]|\\\/))?/gm,
+    return changeByRegex(output1, /[a-z]{2,}:\\\/\\\/([\w_-]+((\.[\w_-]+)+))(([\w.,@?^=%&:~+#-]|\\\/)*([\w@?^=%&~+#-]|\\\/))?/gm,
       m => rewriteUrl('', m[0].replace(/\\\//g, '/'), '', targetUrl).replace(/\//g, '\\/'), DEBUG.BASIC_MATCH);
   });
 
