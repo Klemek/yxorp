@@ -282,6 +282,7 @@ const proxyRequest = (req, res, reqPort) => {
     delete sourceHistory[source];
 
   let reqUrl = url.parse(req.url); // keep requested URL
+  const originalPath = reqUrl.path; // when redirecting known host
 
   const reqHost = req.headers['host'];
   if (sourceHistory[source] && reqHost && reqHost.endsWith(proxy.host) && reqHost.length > proxy.host.length) {
@@ -304,8 +305,8 @@ const proxyRequest = (req, res, reqPort) => {
       res.end();
     } else { // else try to redirect to known host
       if (DEBUG_LEVEL & DEBUG.REDIRECT)
-        console.log(req.url + ' => ' + sourceHistory[source].host + '/' + reqUrl.path);
-      req.url = sourceHistory[source].host + '/' + reqUrl.path;
+        console.log(req.url + ' => ' + sourceHistory[source].host + '/' + originalPath);
+      req.url = sourceHistory[source].host + '/' + originalPath;
       proxyRequest(req, res);
     }
   };
