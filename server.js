@@ -284,7 +284,7 @@ const cssTransform = (targetUrl) => contentTransform(input => changeByRegex(inpu
  * @param {string} targetHost - current page Host
  * @returns {module:stream.internal.Transform}
  */
-const scriptTransform = (targetUrl, trueScript) => contentTransform(input => {
+const scriptTransform = (targetUrl, isScript) => contentTransform(input => {
   // found domains like (//something.com/)
   let output1 = changeByRegex(input, /\/\/((\w+\.)+\w+)\//gm,
     m => '//' + proxy.host + m[0].substr(1), DEBUG.SCRIPT_MATCH);
@@ -298,7 +298,7 @@ const scriptTransform = (targetUrl, trueScript) => contentTransform(input => {
   let output4 = changeByRegex(output3, /(== ?["'])(?:\w+\.){1,}(\w+)(['"])/gm,
     m => TOP_LEVEL_DOMAINS.includes(m[2]) ? m[1] + proxy.hostname + m[3] : m[0], DEBUG.SCRIPT_MATCH);
   // inject proxy script before script
-  let output5 = trueScript ? injectProxyScript(targetUrl) + output4 : output4;
+  let output5 = isScript ? (injectProxyScript(targetUrl) + output4) : output4;
   // found source map
   return changeByRegex(output5, /\/\/# sourceMappingURL=[^\n]+/gm,
     m => '', DEBUG.NONE);
