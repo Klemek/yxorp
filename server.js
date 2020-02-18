@@ -281,8 +281,7 @@ const cssTransform = (targetUrl) => contentTransform(input => changeByRegex(inpu
 
 /**
  * Stream Transform to rewrite possible JS URLs
- * @param {string} targetHost - current page Host
- * @returns {module:stream.internal.Transform}
+ * TODO jsdoc
  */
 const scriptTransform = (targetUrl, isScript) => contentTransform(input => {
   // found domains like (//something.com/)
@@ -298,9 +297,11 @@ const scriptTransform = (targetUrl, isScript) => contentTransform(input => {
   let output4 = changeByRegex(output3, /(== ?["'])(?:\w+\.){1,}(\w+)(['"])/gm,
     m => TOP_LEVEL_DOMAINS.includes(m[2]) ? m[1] + proxy.hostname + m[3] : m[0], DEBUG.SCRIPT_MATCH);
   // inject proxy script before script
-  let output5 = isScript ? (injectProxyScript(targetUrl) + output4) : output4;
+  // TODO not working
+  /*if(isScript)
+    output4 = injectProxyScript(targetUrl) + output4;*/
   // found source map
-  return changeByRegex(output5, /\/\/# sourceMappingURL=[^\n]+/gm,
+  return changeByRegex(output4, /\/\/# sourceMappingURL=[^\n]+/gm,
     m => '', DEBUG.NONE);
 });
 
