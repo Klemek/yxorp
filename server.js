@@ -361,6 +361,7 @@ const proxyRequest = (req, res, reqPort) => {
           case 'text/xml':
           case 'application/xml':
           case 'application/xhtml+xml':
+          case 'application/rss+xml':
             r.pipe(basicTransform(req.url))
               .pipe(res);
             break;
