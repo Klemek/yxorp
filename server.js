@@ -403,7 +403,7 @@ const proxyRequest = (req, res, reqPort) => {
             break;
           case 'text/javascript':
           case 'application/javascript':
-            r.pipe(scriptTransform(sourceHistory[source] ? sourceHistory[source].href : req.url), true)
+            r.pipe(scriptTransform(sourceHistory[source] ? sourceHistory[source].href : req.url, true))
               .pipe(basicTransform(req.url))
               .pipe(res);
             break;
