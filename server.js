@@ -112,6 +112,11 @@ const REMOVE_RESP_HEADERS = [
   'content-length'
 ];
 const HISTORY_TIMEOUT = 6e5; // 10 minutes
+// popular top level domains
+// http://www.seobythesea.com/2006/01/googles-most-popular-and-least-popular-top-level-domains/
+const TOP_LEVEL_DOMAINS = ['com', 'org', 'edu', 'gov', 'uk', 'net',
+                            'ca', 'de', 'jp', 'fr', 'au', 'us', 'ru',
+                            'ch', 'it', 'nl', 'se', 'no', 'es', 'mil'];
 
 console.log('DEBUG LEVELS :');
 Object.keys(DEBUG).forEach(key => {
@@ -252,7 +257,14 @@ const scriptTransform = () => contentTransform(input => {
   // found escaped domains like (\/\/something.com\/)
   let output2 = changeByRegex(output1, /\\\/\\\/((\w+\.)+\w+)\\\//gm,
     m => '\\/\\/' + proxy.host + m[0].substr(2), DEBUG.SCRIPT_MATCH);
-  return changeByRegex(output2, /\/\/# sourceMappingURL=[^\n]+/gm,
+  // found domain check
+  // TODO optimize
+  let output3 = changeByRegex(output2, /(["'])(?:\w+\.){1,}\w+(['"] ?==)/gm,
+    m => m[1] + proxy.hostname + m[2], DEBUG.SCRIPT_MATCH);
+  let output4 = changeByRegex(output3, /(== ?["'])(?:\w+\.){1,}\w+(['"])/gm,
+    m => m[1] + proxy.hostname + m[2], DEBUG.SCRIPT_MATCH);
+  // found source map
+  return changeByRegex(output4, /\/\/# sourceMappingURL=[^\n]+/gm,
     m => '', DEBUG.NONE);
 });
 
