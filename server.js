@@ -291,10 +291,16 @@ const scriptTransform = (targetUrl, trueScript) => contentTransform(input => {
   // found escaped domains like (\/\/something.com\/)
   let output2 = changeByRegex(output1, /\\\/\\\/((\w+\.)+\w+)\\\//gm,
     m => '\\/\\/' + proxy.host + m[0].substr(2), DEBUG.SCRIPT_MATCH);
+  // found domain check
+  // TODO optimize
+  let output3 = changeByRegex(output2, /(["'])(?:\w+\.){1,}(\w+)(['"] ?==)/gm,
+    m => TOP_LEVEL_DOMAINS.includes(m[2]) ? m[1] + proxy.hostname + m[3] : m[0], DEBUG.SCRIPT_MATCH);
+  let output4 = changeByRegex(output3, /(== ?["'])(?:\w+\.){1,}(\w+)(['"])/gm,
+    m => TOP_LEVEL_DOMAINS.includes(m[2]) ? m[1] + proxy.hostname + m[3] : m[0], DEBUG.SCRIPT_MATCH);
   // inject proxy script before script
-  let output3 = trueScript ? injectProxyScript(targetUrl) + output2 : output2;
+  let output5 = trueScript ? injectProxyScript(targetUrl) + output4 : output4;
   // found source map
-  return changeByRegex(output3, /\/\/# sourceMappingURL=[^\n]+/gm,
+  return changeByRegex(output5, /\/\/# sourceMappingURL=[^\n]+/gm,
     m => '', DEBUG.NONE);
 });
 
