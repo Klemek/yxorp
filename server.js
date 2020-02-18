@@ -201,6 +201,37 @@ const changeByRegex = (input, regex, transform, debugId) => {
   return output;
 };
 
+
+/**
+ * TODO jsdoc
+ */
+const injectProxyScript = (targetUrl) => {
+  let parsedTarget = url.parse(targetUrl);
+  return `
+(function() {
+	var rewriteUrl = (u) => {
+	  if (u.includes("${proxy.hostname}"))
+		  return u;
+	  var u2 = new URL(u);
+	  if (u2.protocol) {
+		  return "${proxyPart}" + u2.hostname + u2.path;
+	  } else if (u.startsWith("//")) {
+		  u2 = new URL('http:' + u);
+		  return "${proxy.protocol}//${proxy.host}" + u2.hostname;
+	  } else if (u.startsWith("/")) {
+		  return "${parsedTarget.protocol}${proxy.host}${writeHost(parsedTarget)}" + u;
+	  } else {
+		  return u;
+	  }
+	};
+  var origOpen = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function() {
+      arguments[1] = rewriteUrl(arguments[1]);
+      origOpen.apply(this, arguments);
+  };
+})();`
+}
+
 /**
  * Create a special Stream Transform that accumulate data
  * @param {function(string):string} finalTransform
@@ -232,8 +263,11 @@ const htmlTransform = (targetUrl) => contentTransform(input => {
   // change HTML attributes as href= or src=
   let output1 = changeByRegex(input, /(href|src|url)=["']([^"']+)["']/gm,
     m => rewriteUrl(`${m[1]}="`, m[2], '"', targetUrl), DEBUG.HTML_MATCH);
+  // inject custom js in head
+  let output2 = changeByRegex(output1, /<\/head>/gm,
+    m => '<script>' + injectProxyScript(targetUrl) + '</script></head>', DEBUG.HTML_MATCH);
   // removes script integrity attributes
-  return changeByRegex(output1, /(integrity)=["']([^"']+)["']/gm,
+  return changeByRegex(output2, /(integrity)=["']([^"']+)["']/gm,
     () => '', DEBUG.NONE);
 });
 
@@ -250,21 +284,17 @@ const cssTransform = (targetUrl) => contentTransform(input => changeByRegex(inpu
  * @param {string} targetHost - current page Host
  * @returns {module:stream.internal.Transform}
  */
-const scriptTransform = () => contentTransform(input => {
+const scriptTransform = (targetUrl) => contentTransform(input => {
   // found domains like (//something.com/)
   let output1 = changeByRegex(input, /\/\/((\w+\.)+\w+)\//gm,
     m => '//' + proxy.host + m[0].substr(1), DEBUG.SCRIPT_MATCH);
   // found escaped domains like (\/\/something.com\/)
   let output2 = changeByRegex(output1, /\\\/\\\/((\w+\.)+\w+)\\\//gm,
     m => '\\/\\/' + proxy.host + m[0].substr(2), DEBUG.SCRIPT_MATCH);
-  // found domain check
-  // TODO optimize
-  let output3 = changeByRegex(output2, /(["'])(?:\w+\.){1,}(\w+)(['"] ?==)/gm,
-    m => TOP_LEVEL_DOMAINS.includes(m[2]) ? m[1] + proxy.hostname + m[3] : m[0], DEBUG.SCRIPT_MATCH);
-  let output4 = changeByRegex(output3, /(== ?["'])(?:\w+\.){1,}(\w+)(['"])/gm,
-    m => TOP_LEVEL_DOMAINS.includes(m[2]) ? m[1] + proxy.hostname + m[3] : m[0], DEBUG.SCRIPT_MATCH);
+  // inject proxy script before script
+  let output3 = injectProxyScript(targetUrl) + output2;
   // found source map
-  return changeByRegex(output4, /\/\/# sourceMappingURL=[^\n]+/gm,
+  return changeByRegex(output3, /\/\/# sourceMappingURL=[^\n]+/gm,
     m => '', DEBUG.NONE);
 });
 
