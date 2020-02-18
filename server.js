@@ -284,7 +284,7 @@ const cssTransform = (targetUrl) => contentTransform(input => changeByRegex(inpu
  * @param {string} targetHost - current page Host
  * @returns {module:stream.internal.Transform}
  */
-const scriptTransform = (targetUrl) => contentTransform(input => {
+const scriptTransform = (targetUrl, trueScript) => contentTransform(input => {
   // found domains like (//something.com/)
   let output1 = changeByRegex(input, /\/\/((\w+\.)+\w+)\//gm,
     m => '//' + proxy.host + m[0].substr(1), DEBUG.SCRIPT_MATCH);
@@ -292,7 +292,7 @@ const scriptTransform = (targetUrl) => contentTransform(input => {
   let output2 = changeByRegex(output1, /\\\/\\\/((\w+\.)+\w+)\\\//gm,
     m => '\\/\\/' + proxy.host + m[0].substr(2), DEBUG.SCRIPT_MATCH);
   // inject proxy script before script
-  let output3 = injectProxyScript(targetUrl) + output2;
+  let output3 = trueScript ? injectProxyScript(targetUrl) + output2 : output2;
   // found source map
   return changeByRegex(output3, /\/\/# sourceMappingURL=[^\n]+/gm,
     m => '', DEBUG.NONE);
@@ -384,7 +384,7 @@ const proxyRequest = (req, res, reqPort) => {
         // change data by content-type
         switch (contentType) {
           case 'text/html':
-            r.pipe(scriptTransform())
+            r.pipe(scriptTransform(req.url, false))
               .pipe(htmlTransform(req.url))
               .pipe(cssTransform(req.url))
               .pipe(basicTransform(req.url))
@@ -397,7 +397,7 @@ const proxyRequest = (req, res, reqPort) => {
             break;
           case 'text/javascript':
           case 'application/javascript':
-            r.pipe(scriptTransform())
+            r.pipe(scriptTransform(req.url))
               .pipe(basicTransform(req.url))
               .pipe(res);
             break;
