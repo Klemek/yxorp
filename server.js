@@ -259,10 +259,10 @@ const scriptTransform = () => contentTransform(input => {
     m => '\\/\\/' + proxy.host + m[0].substr(2), DEBUG.SCRIPT_MATCH);
   // found domain check
   // TODO optimize
-  let output3 = changeByRegex(output2, /(["'])(?:\w+\.){1,}\w+(['"] ?==)/gm,
-    m => m[1] + proxy.hostname + m[2], DEBUG.SCRIPT_MATCH);
-  let output4 = changeByRegex(output3, /(== ?["'])(?:\w+\.){1,}\w+(['"])/gm,
-    m => m[1] + proxy.hostname + m[2], DEBUG.SCRIPT_MATCH);
+  let output3 = changeByRegex(output2, /(["'])(?:\w+\.){1,}(\w+)(['"] ?==)/gm,
+    m => TOP_LEVEL_DOMAINS.includes(m[2]) ? m[1] + proxy.hostname + m[3] : m[0], DEBUG.SCRIPT_MATCH);
+  let output4 = changeByRegex(output3, /(== ?["'])(?:\w+\.){1,}(\w+)(['"])/gm,
+    m => TOP_LEVEL_DOMAINS.includes(m[2]) ? m[1] + proxy.hostname + m[3] : m[0], DEBUG.SCRIPT_MATCH);
   // found source map
   return changeByRegex(output4, /\/\/# sourceMappingURL=[^\n]+/gm,
     m => '', DEBUG.NONE);
