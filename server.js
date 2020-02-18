@@ -378,7 +378,9 @@ const proxyRequest = (req, res, reqPort) => {
     req.pipe(request(req.url)
       .on('error', onError)
       .on('response', r => {
-        let contentType = (r.headers['content-type'] || 'unknown').split(';')[0].split(',')[0];
+        let contentType = (r.headers['content-type'] || 'unknown').split(';')[0];
+	if(contentType.includes(','))
+	  contentType = contentType.split(',')[0];
         if (DEBUG_LEVEL & DEBUG.RESPONSE)
           console.log(`${source}<${r.statusCode} (${contentType}) ${req.url}`);
         if (!r.headers['content-type']) // unknown content, just send it as-is
