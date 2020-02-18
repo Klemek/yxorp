@@ -265,7 +265,7 @@ const basicTransform = (targetUrl) =>
     let output1 = changeByRegex(input, /[a-z]{2,}:\/\/([\w_-]+((\.[\w_-]+)+))([\w.,@?^=%&:\/~+#-]*[\w@?^=%&\/~+#-])?/gm,
       m => rewriteUrl('', m[0], '', targetUrl), DEBUG.BASIC_MATCH);
     // full escaped URLs
-    return changeByRegex(input, /[a-z]{2,}:\\\/\\\/([\w_-]+((\.[\w_-]+)+))(([\w.,@?^=%&:~+#-]|\\\/)*([\w@?^=%&~+#-]|\\\/))?/gm,
+    return changeByRegex(output1, /[a-z]{2,}:\\\/\\\/([\w_-]+((\.[\w_-]+)+))(([\w.,@?^=%&:~+#-]|\\\/)*([\w@?^=%&~+#-]|\\\/))?/gm,
       m => rewriteUrl('', m[0].replace(/\\\//g, '/'), '', targetUrl).replace(/\//g, '\\/'), DEBUG.BASIC_MATCH);
   });
 
