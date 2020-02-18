@@ -157,6 +157,8 @@ const rewriteUrl = (prefix, u, suffix, targetUrl) => {
   let parsedTarget = url.parse(targetUrl);
   let parsedMatch = url.parse(u);
   if (parsedMatch.protocol && parsedMatch.slashes) { // full URL with protocol (https://google.com/favicon.ico)
+    if(parsedMatch.path === '/' && !u.endsWith('/')) // special case where it's just https://google.com
+      parsedMatch.path = '';
     return prefix + proxyPart + writeHost(parsedMatch) + parsedMatch.path + suffix; // simply add proxy
   } else if (u.startsWith('//')) { // full URL without protocol (//google.com/favicon.ico)
     parsedMatch = url.parse('http:' + u);
