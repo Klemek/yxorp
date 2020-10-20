@@ -273,7 +273,10 @@ const writeHeadTransform = (res, statusCode, headers) => {
   };
   // on flush, change content and send
   stream._flush = (next => {
-    headers['content-length'] = input.length.toString();
+    if(!input || !input.length)
+      headers['content-length'] = '0';
+    /*else
+      headers['content-length'] = input.length.toString();*/
     res.writeHead(statusCode, headers);
     next(null, input);
   });
@@ -290,10 +293,10 @@ const htmlTransform = (targetUrl) => contentTransform(input => {
   let output1 = changeByRegex(input, /(href|src|url)=["']([^"']+)["']/gm,
     m => rewriteUrl(`${m[1]}="`, m[2], '"', targetUrl), DEBUG.HTML_MATCH);
   // inject custom js in head
-  let output2 = changeByRegex(output1, /<\/head>/gm,
-    m => '<script>' + injectProxyScript(targetUrl) + '</script></head>', DEBUG.HTML_MATCH);
+  /*let output2 = changeByRegex(output1, /<\/head>/gm,
+    m => '<script>' + injectProxyScript(targetUrl) + '</script></head>', DEBUG.HTML_MATCH);*/
   // removes script integrity attributes
-  return changeByRegex(output2, /(integrity)=["']([^"']+)["']/gm,
+  return changeByRegex(output1, /(integrity)=["']([^"']+)["']/gm,
     () => '', DEBUG.NONE);
 });
 
