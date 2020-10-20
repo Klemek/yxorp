@@ -255,6 +255,32 @@ const contentTransform = (finalTransform) => {
 };
 
 /**
+ * Create a special Stream Transform that count data length
+ * @param res
+ * @param statusCode
+ * @param headers
+ * @returns {module:stream.internal.Transform}
+ */
+const writeHeadTransform = (res, statusCode, headers) => {
+  const stream = new Transform();
+  let input = '';
+  // simply accumulate data
+  stream._transform = (chunk, enc, next) => {
+    if (chunk) {
+      input += chunk;
+      next(null, null);
+    }
+  };
+  // on flush, change content and send
+  stream._flush = (next => {
+    headers['content-length'] = input.length.toString();
+    res.writeHead(statusCode, headers);
+    next(null, input);
+  });
+  return stream;
+};
+
+/**
  * Stream Transform to rewrite HTML known URLs
  * @param {string} targetUrl - current page URL
  * @returns {module:stream.internal.Transform}
@@ -386,12 +412,7 @@ const proxyRequest = (req, res, reqPort) => {
         if (DEBUG_LEVEL & DEBUG.RESPONSE)
           console.log(`${source}<${r.statusCode} (${contentType}) ${req.url}`);
         // remove troublesome headers but keep empty content-length
-        const noData = r.headers['content-length'] === '0';
         REMOVE_RESP_HEADERS.forEach(key => delete r.headers[key]);
-        if(noData)
-          r.headers['content-length'] = '0';
-        // write correct response head
-        res.writeHead(r.statusCode, r.headers);
         // change data by content-type
         switch (contentType) {
           case 'text/html':
@@ -400,17 +421,20 @@ const proxyRequest = (req, res, reqPort) => {
               .pipe(htmlTransform(req.url))
               .pipe(cssTransform(req.url))
               .pipe(basicTransform(req.url))
+              .pipe(writeHeadTransform(res, r.statusCode, r.headers))
               .pipe(res);
             break;
           case 'text/css':
             r.pipe(cssTransform(req.url))
               .pipe(basicTransform(req.url))
+              .pipe(writeHeadTransform(res, r.statusCode, r.headers))
               .pipe(res);
             break;
           case 'text/javascript':
           case 'application/javascript':
             r.pipe(scriptTransform(sourceHistory[source] ? sourceHistory[source].href : req.url, true))
               .pipe(basicTransform(req.url))
+              .pipe(writeHeadTransform(res, r.statusCode, r.headers))
               .pipe(res);
             break;
           case 'application/json':
@@ -418,11 +442,13 @@ const proxyRequest = (req, res, reqPort) => {
           case 'application/xml':
           case 'application/rss+xml':
             r.pipe(basicTransform(req.url))
+              .pipe(writeHeadTransform(res, r.statusCode, r.headers))
               .pipe(res);
             break;
           default:
             // simply send data without change
-            r.pipe(basicTransform(req.url)).pipe(res);
+            r.pipe(writeHeadTransform(res, r.statusCode, r.headers))
+              .pipe(res);
             break;
         }
       }));
