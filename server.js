@@ -112,6 +112,11 @@ const REMOVE_RESP_HEADERS = [
   'content-length'
 ];
 const HISTORY_TIMEOUT = 6e5; // 10 minutes
+// popular top level domains
+// http://www.seobythesea.com/2006/01/googles-most-popular-and-least-popular-top-level-domains/
+const TOP_LEVEL_DOMAINS = ['com', 'org', 'edu', 'gov', 'uk', 'net',
+                            'ca', 'de', 'jp', 'fr', 'au', 'us', 'ru',
+                            'ch', 'it', 'nl', 'se', 'no', 'es', 'mil'];
 
 console.log('DEBUG LEVELS :');
 Object.keys(DEBUG).forEach(key => {
@@ -157,6 +162,8 @@ const rewriteUrl = (prefix, u, suffix, targetUrl) => {
   let parsedTarget = url.parse(targetUrl);
   let parsedMatch = url.parse(u);
   if (parsedMatch.protocol && parsedMatch.slashes) { // full URL with protocol (https://google.com/favicon.ico)
+    if(parsedMatch.path === '/' && !u.endsWith('/')) // special case where it's just https://google.com
+      parsedMatch.path = '';
     return prefix + proxyPart + writeHost(parsedMatch) + parsedMatch.path + suffix; // simply add proxy
   } else if (u.startsWith('//')) { // full URL without protocol (//google.com/favicon.ico)
     parsedMatch = url.parse('http:' + u);
@@ -194,6 +201,37 @@ const changeByRegex = (input, regex, transform, debugId) => {
   return output;
 };
 
+
+/**
+ * TODO jsdoc
+ */
+const injectProxyScript = (targetUrl) => {
+  let parsedTarget = url.parse(targetUrl);
+  return `
+(function() {
+	var rewriteUrl = (u) => {
+	  if (u.includes("${proxy.hostname}"))
+		  return u;
+	  var u2 = new URL(u);
+	  if (u2.protocol) {
+		  return "${proxyPart}" + u2.hostname + u2.path;
+	  } else if (u.startsWith("//")) {
+		  u2 = new URL('http:' + u);
+		  return "${proxy.protocol}//${proxy.host}" + u2.hostname;
+	  } else if (u.startsWith("/")) {
+		  return "${parsedTarget.protocol}${proxy.host}${writeHost(parsedTarget)}" + u;
+	  } else {
+		  return u;
+	  }
+	};
+  var origOpen = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function() {
+      arguments[1] = rewriteUrl(arguments[1]);
+      origOpen.apply(this, arguments);
+  };
+})();`
+}
+
 /**
  * Create a special Stream Transform that accumulate data
  * @param {function(string):string} finalTransform
@@ -225,8 +263,11 @@ const htmlTransform = (targetUrl) => contentTransform(input => {
   // change HTML attributes as href= or src=
   let output1 = changeByRegex(input, /(href|src|url)=["']([^"']+)["']/gm,
     m => rewriteUrl(`${m[1]}="`, m[2], '"', targetUrl), DEBUG.HTML_MATCH);
+  // inject custom js in head
+  let output2 = changeByRegex(output1, /<\/head>/gm,
+    m => '<script>' + injectProxyScript(targetUrl) + '</script></head>', DEBUG.HTML_MATCH);
   // removes script integrity attributes
-  return changeByRegex(output1, /(integrity)=["']([^"']+)["']/gm,
+  return changeByRegex(output2, /(integrity)=["']([^"']+)["']/gm,
     () => '', DEBUG.NONE);
 });
 
@@ -240,17 +281,28 @@ const cssTransform = (targetUrl) => contentTransform(input => changeByRegex(inpu
 
 /**
  * Stream Transform to rewrite possible JS URLs
- * @returns {module:stream.internal.Transform}
+ * TODO jsdoc
  */
-const scriptTransform = () => contentTransform(input => {
+const scriptTransform = (targetUrl, isScript) => contentTransform(input => {
   // found domains like (//something.com/)
   let output1 = changeByRegex(input, /\/\/((\w+\.)+\w+)\//gm,
     m => '//' + proxy.host + m[0].substr(1), DEBUG.SCRIPT_MATCH);
   // found escaped domains like (\/\/something.com\/)
   let output2 = changeByRegex(output1, /\\\/\\\/((\w+\.)+\w+)\\\//gm,
     m => '\\/\\/' + proxy.host + m[0].substr(2), DEBUG.SCRIPT_MATCH);
-  return changeByRegex(output2, /\/\/# sourceMappingURL=[^\n]+/gm,
-    () => '', DEBUG.NONE);
+  // found domain check
+  // TODO optimize
+  let output3 = changeByRegex(output2, /(["'])(?:\w+\.){1,}(\w+)(['"] ?==)/gm,
+    m => TOP_LEVEL_DOMAINS.includes(m[2]) ? m[1] + proxy.hostname + m[3] : m[0], DEBUG.SCRIPT_MATCH);
+  let output4 = changeByRegex(output3, /(== ?["'])(?:\w+\.){1,}(\w+)(['"])/gm,
+    m => TOP_LEVEL_DOMAINS.includes(m[2]) ? m[1] + proxy.hostname + m[3] : m[0], DEBUG.SCRIPT_MATCH);
+  // inject proxy script before script
+  // TODO not working
+  /*if(isScript)
+    output4 = injectProxyScript(targetUrl) + output4;*/
+  // found source map
+  return changeByRegex(output4, /\/\/# sourceMappingURL=[^\n]+/gm,
+    m => '', DEBUG.NONE);
 });
 
 /**
@@ -282,7 +334,6 @@ const proxyRequest = (req, res, reqPort) => {
     delete sourceHistory[source];
 
   let reqUrl = url.parse(req.url); // keep requested URL
-  const originalPath = reqUrl.path; // when redirecting known host
 
   const reqHost = req.headers['host'];
   if (sourceHistory[source] && reqHost && reqHost.endsWith(proxy.host) && reqHost.length > proxy.host.length) {
@@ -305,8 +356,8 @@ const proxyRequest = (req, res, reqPort) => {
       res.end();
     } else { // else try to redirect to known host
       if (DEBUG_LEVEL & DEBUG.REDIRECT)
-        console.log(req.url + ' => ' + sourceHistory[source].host + '/' + originalPath);
-      req.url = sourceHistory[source].host + '/' + originalPath;
+        console.log(req.url + ' => ' + sourceHistory[source].host + '/' + reqUrl.path);
+      req.url = sourceHistory[source].host + '/' + reqUrl.path;
       proxyRequest(req, res);
     }
   };
@@ -329,6 +380,8 @@ const proxyRequest = (req, res, reqPort) => {
       .on('error', onError)
       .on('response', r => {
         let contentType = (r.headers['content-type'] || 'unknown').split(';')[0];
+	if(contentType.includes(','))
+	  contentType = contentType.split(',')[0];
         if (DEBUG_LEVEL & DEBUG.RESPONSE)
           console.log(`${source}<${r.statusCode} (${contentType}) ${req.url}`);
         if (!r.headers['content-type']) // unknown content, just send it as-is
@@ -340,7 +393,8 @@ const proxyRequest = (req, res, reqPort) => {
         // change data by content-type
         switch (contentType) {
           case 'text/html':
-            r.pipe(scriptTransform())
+	  case 'application/xhtml+xml':
+            r.pipe(scriptTransform(req.url, false))
               .pipe(htmlTransform(req.url))
               .pipe(cssTransform(req.url))
               .pipe(basicTransform(req.url))
@@ -353,7 +407,7 @@ const proxyRequest = (req, res, reqPort) => {
             break;
           case 'text/javascript':
           case 'application/javascript':
-            r.pipe(scriptTransform())
+            r.pipe(scriptTransform(sourceHistory[source] ? sourceHistory[source].href : req.url, true))
               .pipe(basicTransform(req.url))
               .pipe(res);
             break;
@@ -361,6 +415,7 @@ const proxyRequest = (req, res, reqPort) => {
           case 'text/xml':
           case 'application/xml':
           case 'application/xhtml+xml':
+          case 'application/rss+xml':
             r.pipe(basicTransform(req.url))
               .pipe(res);
             break;
