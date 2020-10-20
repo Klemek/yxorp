@@ -357,7 +357,10 @@ const proxyRequest = (req, res, reqPort) => {
     } else { // else try to redirect to known host
       if (DEBUG_LEVEL & DEBUG.REDIRECT)
         console.log(req.url + ' => ' + sourceHistory[source].host + '/' + reqUrl.path);
-      req.url = sourceHistory[source].host + '/' + reqUrl.path;
+      // case when url is https://path
+      if(!TOP_LEVEL_DOMAINS.includes(reqUrl.host.substr(reqUrl.host.lastIndexOf(".")+1)))
+        reqUrl.path = '/' + reqUrl.host + reqUrl.path;
+      req.url = sourceHistory[source].host + reqUrl.path;
       proxyRequest(req, res);
     }
   };
@@ -384,13 +387,13 @@ const proxyRequest = (req, res, reqPort) => {
 	  contentType = contentType.split(',')[0];
         if (DEBUG_LEVEL & DEBUG.RESPONSE)
           console.log(`${source}<${r.statusCode} (${contentType}) ${req.url}`);
-        if (!r.headers['content-type']) // unknown content, just send it as-is
-          return r.pipe(res);
         // remove troublesome headers
         REMOVE_RESP_HEADERS.forEach(key => delete r.headers[key]);
         // write correct response head
-        res.writeHead(res.statusCode, r.headers);
+        res.writeHead(r.statusCode, r.headers);
         // change data by content-type
+        if (!r.headers['content-type']) // unknown content, just send it as-is
+          return r.pipe(res);
         switch (contentType) {
           case 'text/html':
 	  case 'application/xhtml+xml':
