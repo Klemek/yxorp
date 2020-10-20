@@ -385,16 +385,17 @@ const proxyRequest = (req, res, reqPort) => {
 	  contentType = contentType.split(',')[0];
         if (DEBUG_LEVEL & DEBUG.RESPONSE)
           console.log(`${source}<${r.statusCode} (${contentType}) ${req.url}`);
-        // remove troublesome headers
+        // remove troublesome headers but keep empty content-length
+        const noData = r.headers['content-length'] === '0';
         REMOVE_RESP_HEADERS.forEach(key => delete r.headers[key]);
+        if(noData)
+          r.headers['content-length'] = '0';
         // write correct response head
         res.writeHead(r.statusCode, r.headers);
         // change data by content-type
-        if (!r.headers['content-type']) // unknown content, just send it as-is
-          return r.pipe(res);
         switch (contentType) {
           case 'text/html':
-	  case 'application/xhtml+xml':
+	        case 'application/xhtml+xml':
             r.pipe(scriptTransform(req.url, false))
               .pipe(htmlTransform(req.url))
               .pipe(cssTransform(req.url))
@@ -415,14 +416,13 @@ const proxyRequest = (req, res, reqPort) => {
           case 'application/json':
           case 'text/xml':
           case 'application/xml':
-          case 'application/xhtml+xml':
           case 'application/rss+xml':
             r.pipe(basicTransform(req.url))
               .pipe(res);
             break;
           default:
             // simply send data without change
-            r.pipe(res);
+            r.pipe(basicTransform(req.url)).pipe(res);
             break;
         }
       }));
