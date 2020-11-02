@@ -108,6 +108,7 @@ const REMOVE_REQ_HEADERS = [
   'sec-fetch-user'];
 const REMOVE_RESP_HEADERS = [
   'access-control-allow-origin',
+  'access-control-allow-method',
   'content-security-policy',
   'content-length'
 ];
@@ -414,7 +415,8 @@ const proxyRequest = (req, res, reqPort) => {
 	  contentType = contentType.split(',')[0];
         if (DEBUG_LEVEL & DEBUG.RESPONSE)
           console.log(`${source}<${r.statusCode} (${contentType}) ${req.url}`);
-        // remove troublesome headers but keep empty content-length
+        // remove troublesome headers
+        const tmpContentLength = r.headers['content-length'];
         REMOVE_RESP_HEADERS.forEach(key => delete r.headers[key]);
         // change data by content-type
         switch (contentType) {
@@ -449,9 +451,10 @@ const proxyRequest = (req, res, reqPort) => {
               .pipe(res);
             break;
           default:
-            // simply send data without change
-            r.pipe(writeHeadTransform(res, r.statusCode, r.headers))
-              .pipe(res);
+            // simply send data without change but restore content-length header
+            r.headers['content-length'] = tmpContentLength;
+            res.writeHead(r.statusCode, r.headers);
+            r.pipe(res);
             break;
         }
       }));
