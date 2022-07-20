@@ -8,6 +8,6 @@
   "devDependencies": {
     "html-minifier-terser": "^5.0.2",
     "nodemon": "^2.0.2",
-    "terser": "^4.6.2"
+    "terser": "^4.8.1"
   }
 }
